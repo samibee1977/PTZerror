@@ -176,55 +176,98 @@ namespace NinjaTrader.NinjaScript.Strategies
 			priceLevels.Clear();
 
 			if (ChartControl == null)
+			{
+				Print(string.Format("{0}: ChartControl is null - strategy must be run on a chart", Time[0]));
 				return;
+			}
 
 			try
 			{
-				foreach (var drawObject in DrawObjects)
+				// Access the chart's drawing objects collection (works in real-time only)
+				ChartControl.Dispatcher.InvokeAsync(() =>
 				{
-					if (drawObject == null)
-						continue;
-
-					string tag = drawObject.Tag ?? string.Empty;
-					double priceLevel = 0;
-
-					if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Line)
+					try
 					{
-						var line = drawObject as NinjaTrader.NinjaScript.DrawingTools.Line;
-						priceLevel = line.StartAnchor.Price;
-					}
-					else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.HorizontalLine)
-					{
-						var hLine = drawObject as NinjaTrader.NinjaScript.DrawingTools.HorizontalLine;
-						priceLevel = hLine.StartAnchor.Price;
-					}
-					else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Ray)
-					{
-						var ray = drawObject as NinjaTrader.NinjaScript.DrawingTools.Ray;
-						priceLevel = ray.StartAnchor.Price;
-					}
-					else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Text)
-					{
-						var text = drawObject as NinjaTrader.NinjaScript.DrawingTools.Text;
-						priceLevel = text.Anchor.Price;
-						string textContent = text.DisplayText ?? string.Empty;
-
-						if (!string.IsNullOrEmpty(textContent) && priceLevel > 0)
+						foreach (var drawObject in ChartControl.DrawObjects)
 						{
-							if (!priceLevels.ContainsKey(priceLevel))
-								priceLevels[priceLevel] = textContent;
+							if (drawObject == null)
+								continue;
+
+							string tag = drawObject.Tag ?? string.Empty;
+							double priceLevel = 0;
+							string description = string.Empty;
+
+							if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Line)
+							{
+								var line = drawObject as NinjaTrader.NinjaScript.DrawingTools.Line;
+								priceLevel = line.StartAnchor.Price;
+							}
+							else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.HorizontalLine)
+							{
+								var hLine = drawObject as NinjaTrader.NinjaScript.DrawingTools.HorizontalLine;
+								priceLevel = hLine.StartAnchor.Price;
+							}
+							else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Ray)
+							{
+								var ray = drawObject as NinjaTrader.NinjaScript.DrawingTools.Ray;
+								priceLevel = ray.StartAnchor.Price;
+							}
+							else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Text)
+							{
+								var text = drawObject as NinjaTrader.NinjaScript.DrawingTools.Text;
+								priceLevel = text.Anchor.Price;
+								description = text.DisplayText ?? string.Empty;
+
+								if (!string.IsNullOrEmpty(description) && priceLevel > 0)
+								{
+									lock (priceLevels)
+									{
+										if (!priceLevels.ContainsKey(priceLevel))
+											priceLevels[priceLevel] = description;
+									}
+								}
+							}
+
+							// Use tag as description if we don't have one from text
+							if (priceLevel > 0 && !string.IsNullOrEmpty(tag) && string.IsNullOrEmpty(description))
+							{
+								lock (priceLevels)
+								{
+									if (!priceLevels.ContainsKey(priceLevel))
+										priceLevels[priceLevel] = tag;
+								}
+							}
+						}
+
+						int levelCount = 0;
+						lock (priceLevels)
+						{
+							levelCount = priceLevels.Count;
+						}
+
+						if (levelCount > 0)
+						{
+							Print(string.Format("{0}: Found {1} price levels from chart", Time[0], levelCount));
+
+							// Print details of each level for debugging
+							lock (priceLevels)
+							{
+								foreach (var level in priceLevels)
+								{
+									Print(string.Format("  Level: {0:F2} - {1}", level.Key, level.Value));
+								}
+							}
+						}
+						else
+						{
+							Print(string.Format("{0}: No price levels found - ensure PLZPlannedLevels indicator is on the chart", Time[0]));
 						}
 					}
-
-					if (priceLevel > 0 && !string.IsNullOrEmpty(tag))
+					catch (Exception ex)
 					{
-						if (!priceLevels.ContainsKey(priceLevel))
-							priceLevels[priceLevel] = tag;
+						Print(string.Format("Error in Dispatcher: {0}", ex.Message));
 					}
-				}
-
-				if (priceLevels.Count > 0)
-					Print(string.Format("{0}: Found {1} price levels from chart", Time[0], priceLevels.Count));
+				});
 			}
 			catch (Exception ex)
 			{
@@ -234,94 +277,100 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		private bool ShouldBuyAtLevel(double currentPrice, double previousPrice)
 		{
-			if (priceLevels.Count == 0)
-				return false;
-
-			double proximity = PriceProximityTicks * TickSize;
-
-			foreach (var level in priceLevels)
+			lock (priceLevels)
 			{
-				double levelPrice = level.Key;
-				string description = level.Value.ToLower();
+				if (priceLevels.Count == 0)
+					return false;
 
-				bool isBuyLevel = false;
+				double proximity = PriceProximityTicks * TickSize;
 
-				if (UseSupport && description.Contains(KeywordSupport.ToLower()))
-					isBuyLevel = true;
-				if (UsePivotBull && description.Contains(KeywordPivotBull.ToLower()))
-					isBuyLevel = true;
-				if (UseStrengthConfirmed && description.Contains(KeywordStrengthConfirmed.ToLower()))
-					isBuyLevel = true;
-
-				if (isBuyLevel)
+				foreach (var level in priceLevels)
 				{
-					if (TradeOnCrossover)
-					{
-						if (previousPrice <= levelPrice && currentPrice > levelPrice)
-						{
-							Print(string.Format("{0}: BUY Signal - Price crossed above {1} at {2}", Time[0], description, levelPrice));
-							return true;
-						}
-					}
+					double levelPrice = level.Key;
+					string description = level.Value.ToLower();
 
-					if (TradeOnTouch)
+					bool isBuyLevel = false;
+
+					if (UseSupport && description.Contains(KeywordSupport.ToLower()))
+						isBuyLevel = true;
+					if (UsePivotBull && description.Contains(KeywordPivotBull.ToLower()))
+						isBuyLevel = true;
+					if (UseStrengthConfirmed && description.Contains(KeywordStrengthConfirmed.ToLower()))
+						isBuyLevel = true;
+
+					if (isBuyLevel)
 					{
-						if (currentPrice >= levelPrice && Math.Abs(currentPrice - levelPrice) <= proximity)
+						if (TradeOnCrossover)
 						{
-							Print(string.Format("{0}: BUY Signal - Price touching {1} at {2}", Time[0], description, levelPrice));
-							return true;
+							if (previousPrice <= levelPrice && currentPrice > levelPrice)
+							{
+								Print(string.Format("{0}: BUY Signal - Price crossed above {1} at {2}", Time[0], description, levelPrice));
+								return true;
+							}
+						}
+
+						if (TradeOnTouch)
+						{
+							if (currentPrice >= levelPrice && Math.Abs(currentPrice - levelPrice) <= proximity)
+							{
+								Print(string.Format("{0}: BUY Signal - Price touching {1} at {2}", Time[0], description, levelPrice));
+								return true;
+							}
 						}
 					}
 				}
-			}
 
-			return false;
+				return false;
+			}
 		}
 
 		private bool ShouldSellAtLevel(double currentPrice, double previousPrice)
 		{
-			if (priceLevels.Count == 0)
-				return false;
-
-			double proximity = PriceProximityTicks * TickSize;
-
-			foreach (var level in priceLevels)
+			lock (priceLevels)
 			{
-				double levelPrice = level.Key;
-				string description = level.Value.ToLower();
+				if (priceLevels.Count == 0)
+					return false;
 
-				bool isSellLevel = false;
+				double proximity = PriceProximityTicks * TickSize;
 
-				if (UseResistance && description.Contains(KeywordResistance.ToLower()))
-					isSellLevel = true;
-				if (UsePivotBear && description.Contains(KeywordPivotBear.ToLower()))
-					isSellLevel = true;
-				if (UseWeaknessConfirmed && description.Contains(KeywordWeaknessConfirmed.ToLower()))
-					isSellLevel = true;
-
-				if (isSellLevel)
+				foreach (var level in priceLevels)
 				{
-					if (TradeOnCrossover)
-					{
-						if (previousPrice >= levelPrice && currentPrice < levelPrice)
-						{
-							Print(string.Format("{0}: SELL Signal - Price crossed below {1} at {2}", Time[0], description, levelPrice));
-							return true;
-						}
-					}
+					double levelPrice = level.Key;
+					string description = level.Value.ToLower();
 
-					if (TradeOnTouch)
+					bool isSellLevel = false;
+
+					if (UseResistance && description.Contains(KeywordResistance.ToLower()))
+						isSellLevel = true;
+					if (UsePivotBear && description.Contains(KeywordPivotBear.ToLower()))
+						isSellLevel = true;
+					if (UseWeaknessConfirmed && description.Contains(KeywordWeaknessConfirmed.ToLower()))
+						isSellLevel = true;
+
+					if (isSellLevel)
 					{
-						if (currentPrice <= levelPrice && Math.Abs(currentPrice - levelPrice) <= proximity)
+						if (TradeOnCrossover)
 						{
-							Print(string.Format("{0}: SELL Signal - Price touching {1} at {2}", Time[0], description, levelPrice));
-							return true;
+							if (previousPrice >= levelPrice && currentPrice < levelPrice)
+							{
+								Print(string.Format("{0}: SELL Signal - Price crossed below {1} at {2}", Time[0], description, levelPrice));
+								return true;
+							}
+						}
+
+						if (TradeOnTouch)
+						{
+							if (currentPrice <= levelPrice && Math.Abs(currentPrice - levelPrice) <= proximity)
+							{
+								Print(string.Format("{0}: SELL Signal - Price touching {1} at {2}", Time[0], description, levelPrice));
+								return true;
+							}
 						}
 					}
 				}
-			}
 
-			return false;
+				return false;
+			}
 		}
 
 		#region Properties

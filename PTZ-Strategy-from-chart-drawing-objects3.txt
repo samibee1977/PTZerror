@@ -199,33 +199,33 @@ namespace NinjaTrader.NinjaScript.Strategies
 							if (drawObject == null)
 								continue;
 
-							var drawingTool = drawObject as NinjaTrader.Gui.Chart.DrawingTool;
-							if (drawingTool == null)
-								continue;
-
-							string tag = drawingTool.Tag ?? string.Empty;
+							string tag = string.Empty;
 							double priceLevel = 0;
 							string description = string.Empty;
 
-							if (drawingTool is NinjaTrader.NinjaScript.DrawingTools.Line)
+							if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Line)
 							{
-								var line = drawingTool as NinjaTrader.NinjaScript.DrawingTools.Line;
+								var line = drawObject as NinjaTrader.NinjaScript.DrawingTools.Line;
 								priceLevel = line.StartAnchor.Price;
+								tag = line.Tag ?? string.Empty;
 							}
-							else if (drawingTool is NinjaTrader.NinjaScript.DrawingTools.HorizontalLine)
+							else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.HorizontalLine)
 							{
-								var hLine = drawingTool as NinjaTrader.NinjaScript.DrawingTools.HorizontalLine;
+								var hLine = drawObject as NinjaTrader.NinjaScript.DrawingTools.HorizontalLine;
 								priceLevel = hLine.StartAnchor.Price;
+								tag = hLine.Tag ?? string.Empty;
 							}
-							else if (drawingTool is NinjaTrader.NinjaScript.DrawingTools.Ray)
+							else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Ray)
 							{
-								var ray = drawingTool as NinjaTrader.NinjaScript.DrawingTools.Ray;
+								var ray = drawObject as NinjaTrader.NinjaScript.DrawingTools.Ray;
 								priceLevel = ray.StartAnchor.Price;
+								tag = ray.Tag ?? string.Empty;
 							}
-							else if (drawingTool is NinjaTrader.NinjaScript.DrawingTools.Text)
+							else if (drawObject is NinjaTrader.NinjaScript.DrawingTools.Text)
 							{
-								var text = drawingTool as NinjaTrader.NinjaScript.DrawingTools.Text;
+								var text = drawObject as NinjaTrader.NinjaScript.DrawingTools.Text;
 								priceLevel = text.Anchor.Price;
+								tag = text.Tag ?? string.Empty;
 								description = text.DisplayText ?? string.Empty;
 
 								if (!string.IsNullOrEmpty(description) && priceLevel > 0)
